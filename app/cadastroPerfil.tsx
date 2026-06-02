@@ -253,6 +253,6 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     color: '#283593', 
-    fontWeight: '600',
+    fontWeight: 'semibold',
   },
 });

@@ -1,18 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Image, 
-  TextInput, 
-  TouchableOpacity, 
-  Text, 
-  Dimensions, 
-  KeyboardAvoidingView, 
-  Platform, 
-  ScrollView 
-} from 'react-native';
+import { StyleSheet, View, Image, TextInput, TouchableOpacity, Text, Dimensions, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -23,14 +13,12 @@ export default function Login() {
     <View style={styles.container}>
       
       {/* Bloco Superior com Scroll para o teclado não cobrir os campos */}
-      <KeyboardAvoidingView
+      <KeyboardAvoidingView  //faz o teclado subir quando clica no campo de pesquisa
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView 
           contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+          showsVerticalScrollIndicator={false}>
           
           {/* Logo */}
           <View style={styles.header}>
@@ -111,7 +99,7 @@ export default function Login() {
           Ainda não tem conta?{' '}
           <Text 
             style={styles.textoAzulLink} 
-            onPress={() => router.push('/cadastro')}
+            onPress={() => router.push('/cadastroPerfil')}
           >
             Cadastre-se
           </Text>
