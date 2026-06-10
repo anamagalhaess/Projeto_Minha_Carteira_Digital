@@ -17,9 +17,16 @@ export default function VisualizarDocumentoScreen() {
 
   const [ladoVisivel, setLadoVisivel] = useState<'frente' | 'verso'>('frente');
   const [dataValidade, setDataValidade] = useState(doc?.dataValidade || '');
-  const [favorito, setFavorito] = useState(false);
+  const [favorito, setFavorito] = useState(doc?.favorito || false);
   const [dropdownVisivel, setDropdownVisivel] = useState(false);
   const [pastaSelecionada, setPastaSelecionada] = useState<any>(pasta);
+
+  const toggleFavorito = () => {
+    const novoValor = !favorito;
+    setFavorito(novoValor);
+    // Salva diretamente no objeto em memória
+    if (doc) doc.favorito = novoValor;
+  };
 
   if (!doc) {
     return (
@@ -50,12 +57,20 @@ export default function VisualizarDocumentoScreen() {
   };
 
   const handleMoverPasta = (novaPasta: any) => {
-    if (pasta && novaPasta.id !== pasta.id) {
-      pasta.docs = pasta.docs.filter((d: any) => d.id !== docId);
-      novaPasta.docs.push(doc);
-      setPastaSelecionada(novaPasta);
+    if (novaPasta.id === pastaSelecionada?.id) {
+      setDropdownVisivel(false);
+      return;
     }
+    // Remove da pasta atual
+    const pastaAtual = pastasEmMemoria.find(p => p.id === pastaSelecionada?.id);
+    if (pastaAtual) {
+      pastaAtual.docs = pastaAtual.docs.filter((d: any) => d.id !== docId);
+    }
+    // Adiciona na nova pasta
+    novaPasta.docs.push(doc);
+    setPastaSelecionada(novaPasta);
     setDropdownVisivel(false);
+    Alert.alert('Sucesso', `Documento movido para "${novaPasta.nome}"!`);
   };
 
   return (
@@ -128,8 +143,13 @@ export default function VisualizarDocumentoScreen() {
 
         {/* Favoritar */}
         <Text style={styles.label}>Favoritar</Text>
-        <TouchableOpacity style={styles.inputRow} onPress={() => setFavorito(!favorito)}>
-          <Text style={styles.inputTexto}>{favorito ? 'Sim' : 'Não'}</Text>
+        <TouchableOpacity style={styles.inputRow} onPress={toggleFavorito}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <Feather name={favorito ? 'star' : 'star'} size={16} color={favorito ? '#e95e07' : '#999'} style={{ marginRight: 8 }} />
+            <Text style={[styles.inputTexto, { color: favorito ? '#e95e07' : '#333' }]}>
+              {favorito ? 'Sim' : 'Não'}
+            </Text>
+          </View>
           <Feather name="chevron-right" size={18} color="#666" />
         </TouchableOpacity>
 
@@ -193,7 +213,7 @@ export default function VisualizarDocumentoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
-  fixedTop: { paddingTop: 60, paddingBottom: 20, backgroundColor: '#FFFFFF' },
+  fixedTop: { paddingTop: (StatusBar.currentHeight ?? 20), paddingBottom: 20, backgroundColor: '#FFFFFF' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30 },
   logoTitulo: { fontSize: 22, fontWeight: '900', color: '#e95e07', flex: 1, marginRight: 10 },
   perfilImage: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#e95e07' },

@@ -1,7 +1,8 @@
 // Memória global do usuário — substitua pelos dados reais quando tiver backend
 export const userStore = {
-  nomeCompleto: 'Ana Magalhães',
-  email: 'analauramagalhaes.russo@gmail.com',
+  nomeCompleto: '',
+  email: '',
+  fotoUri: null as string | null,
   get primeiroNome() {
     return this.nomeCompleto.split(' ')[0];
   },

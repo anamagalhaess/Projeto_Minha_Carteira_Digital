@@ -3,7 +3,7 @@ import {
   StyleSheet, View, Text, Image, TextInput, TouchableOpacity, 
   ScrollView, Dimensions, StatusBar, Alert 
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { userStore } from './userStore';
 
@@ -16,6 +16,35 @@ export default function HomeScreen() {
   const [acessoRapido, setAcessoRapido] = useState<any[]>([]);
   const [menuVisivel, setMenuVisivel] = useState(false);
   const [minhasPastas, setMinhasPastas] = useState<any[]>(pastasEmMemoria);
+
+  // Calcula documentos próximos de vencer (dentro de 3 meses)
+  const docsProximosVencer = () => {
+    const hoje = new Date();
+    const limite = new Date();
+    limite.setMonth(limite.getMonth() + 3);
+    const resultado: { doc: any; diasRestantes: number }[] = [];
+
+    pastasEmMemoria.forEach(pasta => {
+      (pasta.docs || []).forEach((doc: any) => {
+        if (!doc.dataValidade || !doc.avisoAutomatico) return;
+        const [dia, mes, ano] = doc.dataValidade.split('/').map(Number);
+        const vencimento = new Date(ano, mes - 1, dia);
+        if (vencimento <= limite && vencimento >= hoje) {
+          const diff = Math.ceil((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+          resultado.push({ doc, diasRestantes: diff });
+        }
+      });
+    });
+
+    return resultado.sort((a, b) => a.diasRestantes - b.diasRestantes);
+  };
+
+  const textoAviso = (dias: number) => {
+    if (dias === 0) return 'Vence hoje!';
+    if (dias < 30) return `Falta${dias === 1 ? '' : 'm'} ${dias} dia${dias === 1 ? '' : 's'} para vencer`;
+    const meses = Math.floor(dias / 30);
+    return `Falta${meses === 1 ? '' : 'm'} ${meses} ${meses === 1 ? 'mês' : 'meses'} para vencer`;
+  };
 
   useEffect(() => {
     if (params.novaPastaNome) {
@@ -50,10 +79,10 @@ export default function HomeScreen() {
     setMinhasPastas([...pastasEmMemoria]);
   };
 
-  const adicionarDoc = (doc: any) => {
-    const jaAdicionado = acessoRapido.find(item => item.nome === doc.nome);
+  const adicionarDoc = (doc: any, pastaId: string) => {
+    const jaAdicionado = acessoRapido.find(item => item.id === doc.id);
     if (!jaAdicionado && acessoRapido.length < 3) {
-      setAcessoRapido([...acessoRapido, doc]);
+      setAcessoRapido([...acessoRapido, { ...doc, pastaId }]);
       setMenuVisivel(false);
     }
   };
@@ -66,7 +95,7 @@ export default function HomeScreen() {
             <Text style={styles.menuTitle}>{pasta.nome}</Text>
             {pasta.docs && pasta.docs.length > 0 ? (
               pasta.docs.map((doc: any, i: number) => (
-                <TouchableOpacity key={i} style={styles.menuItem} onPress={() => adicionarDoc(doc)}>
+                <TouchableOpacity key={i} style={styles.menuItem} onPress={() => adicionarDoc(doc, pasta.id)}>
                   <Text style={{ fontSize: 15 }}>{doc.nome}</Text>
                 </TouchableOpacity>
               ))
@@ -94,7 +123,10 @@ export default function HomeScreen() {
             <Text style={styles.subText}>Sou sua carteira digital</Text>
           </View>
           <TouchableOpacity onPress={() => router.push({ pathname: '/perfil', params: { totalPastas: minhasPastas.length } })}>
-            <Image source={require('../assets/images/fotoPerfil.jpg')} style={styles.avatar} />
+            <Image
+              source={userStore.fotoUri ? { uri: userStore.fotoUri } : require('../assets/images/fotoPerfil.jpg')}
+              style={styles.avatar}
+            />
           </TouchableOpacity>
         </View>
         <View style={styles.searchBar}>
@@ -109,10 +141,10 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Acesso Rápido</Text>
         <View style={styles.grid}>
           {acessoRapido.map((doc, index) => (
-            <View key={index} style={styles.card}>
-              <MaterialCommunityIcons name={doc.icone || 'file-document-outline'} size={28} color={doc.cor || '#000'} />
-              <Text style={styles.cardText}>{doc.nome}</Text>
-            </View>
+            <TouchableOpacity key={index} style={styles.card} onPress={() => router.push({ pathname: '/visualizarDocumento', params: { pastaId: doc.pastaId, docId: doc.id } })}>
+              <Text style={styles.cardNome} numberOfLines={1}>{doc.nome.toUpperCase()}</Text>
+              <View style={styles.underline} />
+            </TouchableOpacity>
           ))}
           {acessoRapido.length < 3 && (
             <TouchableOpacity style={styles.addCard} onPress={() => setMenuVisivel(!menuVisivel)}>
@@ -123,6 +155,24 @@ export default function HomeScreen() {
         </View>
 
         {menuVisivel && <MiniMenu />}
+
+        {/* --- AVISOS DE VENCIMENTO --- */}
+        {docsProximosVencer().length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Aviso</Text>
+            {docsProximosVencer().map(({ doc, diasRestantes }) => (
+              <View key={doc.id} style={styles.avisoCard}>
+                <View style={styles.avisoIcone}>
+                  <Feather name="bell" size={22} color="#e95e07" />
+                </View>
+                <View style={styles.avisoInfo}>
+                  <Text style={styles.avisoNome}>{doc.nome}</Text>
+                  <Text style={styles.avisoTexto}>{textoAviso(diasRestantes)}</Text>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
 
         {/* Minhas Pastas */}
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Minhas Pastas</Text>
@@ -167,7 +217,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
-  headerContainer: { backgroundColor: '#FFF', paddingBottom: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingTop: 60, elevation: 5 },
+  headerContainer: { backgroundColor: '#FFF', paddingBottom: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingTop: (StatusBar.currentHeight ?? 20)},
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20 },
   titleText: { fontSize: 24, fontWeight: 'bold' },
   subText: { color: '#666' },
@@ -178,10 +228,10 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: '800', marginBottom: 15, color: '#333' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   
-  card: { width: (width - 64) / 2.1, backgroundColor: '#FFF', padding: 20, borderRadius: 20, alignItems: 'center', elevation: 2, marginBottom: 16 },
-  addCard: { width: (width - 64) / 2.1, height: 110, backgroundColor: '#FFF', borderRadius: 20, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#DDD', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  card: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#e95e07', height: 90, marginBottom: 16 },
+  addCard: { width: (width - 64) / 2.1, height: 90, backgroundColor: '#FFF', borderRadius: 12, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#DDD', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  cardNome: { fontWeight: 'bold', fontSize: 14, color: '#000000', textAlign: 'center' },
   addCardText: { marginTop: 8, color: '#AAA', fontSize: 13 },
-  cardText: { marginTop: 10, fontWeight: '600', color: '#444' },
   
   pastaCard: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#e95e07', height: 90, marginBottom: 16 },
   pastaCardAdicionar: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#DDD', borderStyle: 'dashed', height: 90, marginBottom: 16 },
@@ -193,6 +243,13 @@ const styles = StyleSheet.create({
   menuTitle: { fontWeight: 'bold', color: '#e95e07', fontSize: 14, marginBottom: 8 },
   menuItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   textoVazio: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 5 },
+
+  // Avisos de vencimento
+  avisoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1.5, borderColor: '#e95e07', padding: 14, marginBottom: 10 },
+  avisoIcone: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#FFF5EE', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  avisoInfo: { flex: 1 },
+  avisoNome: { fontSize: 14, fontWeight: '700', color: '#000', marginBottom: 2 },
+  avisoTexto: { fontSize: 12, color: '#e95e07', fontWeight: '600' },
 
   // TabBar padronizada
   tabBar: { position: 'absolute', bottom: 0, flexDirection: 'row', width: '100%', height: 80, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#DDD', justifyContent: 'space-around', alignItems: 'center' },

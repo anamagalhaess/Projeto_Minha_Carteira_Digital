@@ -59,7 +59,7 @@ export default function PerfilScreen() {
   const [nome, setNome] = useState(userStore.nomeCompleto);
   const [email, setEmail] = useState(userStore.email);
   const [senha, setSenha] = useState('');
-  const [fotoUri, setFotoUri] = useState<string | null>(null);
+  const [fotoUri, setFotoUri] = useState<string | null>(userStore.fotoUri);
 
   // Pega o número de pastas enviado pela home, com fallback para 0
   const totalPastas = params.totalPastas ? Number(params.totalPastas) : 0;
@@ -74,7 +74,10 @@ export default function PerfilScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true, aspect: [1, 1], quality: 1,
     });
-    if (!result.canceled) setFotoUri(result.assets[0].uri);
+    if (!result.canceled) {
+      setFotoUri(result.assets[0].uri);
+      userStore.fotoUri = result.assets[0].uri;
+    }
   };
 
   const handleSair = () => {
@@ -155,7 +158,7 @@ export default function PerfilScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
-  headerContainer: { paddingTop: 60, paddingHorizontal: 30, paddingBottom: 16 },
+  headerContainer: { paddingTop: (StatusBar.currentHeight ?? 20), paddingHorizontal: 30, paddingBottom: 16 },
   btnVoltar: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   btnVoltarTexto: { fontSize: 16, fontWeight: 'bold', marginLeft: 6 },
   tituloHeader: { fontSize: 26, fontWeight: '900', color: '#000' },

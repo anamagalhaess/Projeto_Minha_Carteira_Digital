@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   footer: {
     width: '100%',
     alignItems: 'center',
-    paddingBottom: 30,
+    paddingBottom: 8
   },
   linhaSeparadora: {
     width: '100%', 

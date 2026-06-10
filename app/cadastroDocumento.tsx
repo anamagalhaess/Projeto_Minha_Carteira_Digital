@@ -26,8 +26,8 @@ export default function CadastrarDocumentoScreen() {
   const [dropdownVisivel, setDropdownVisivel] = useState(false);
 
   const handleCadastrar = () => {
-    if (!nome.trim() || !pastaSelecionada || !dataValidade) {
-      Alert.alert('Atenção', 'Por favor, preencha todos os campos obrigatórios.');
+    if (!nome.trim() || !pastaSelecionada) {
+      Alert.alert('Atenção', 'Por favor, preencha o nome do documento e selecione uma pasta.');
       return;
     }
 
@@ -35,7 +35,7 @@ export default function CadastrarDocumentoScreen() {
       id: Date.now().toString(),
       nome: nome.trim(),
       descricao: descricao.trim(),
-      dataValidade: formatarData(dataValidade),
+      dataValidade: dataValidade ? formatarData(dataValidade) : null,
       avisoAutomatico,
     };
 
@@ -120,7 +120,7 @@ export default function CadastrarDocumentoScreen() {
         {/* Campo data de validade com calendário */}
         <TouchableOpacity style={styles.inputContainer} onPress={() => setMostrarCalendario(true)}>
           <Text style={[styles.inputFake, { flex: 1 }, !dataValidade && { color: '#999' }]}>
-            {dataValidade ? formatarData(dataValidade) : 'Data de validade *'}
+            {dataValidade ? formatarData(dataValidade) : 'Data de validade (opcional)'}
           </Text>
           <Feather name="calendar" size={20} color="#666" />
         </TouchableOpacity>
@@ -151,7 +151,6 @@ export default function CadastrarDocumentoScreen() {
                   minimumDate={new Date()}
                   locale="pt-BR"
                   onChange={(_, date) => { if (date) setDataValidade(date); }}
-                  style={{ width: '100%' }}
                   accentColor="#e95e07"
                 />
                 <TouchableOpacity
@@ -193,7 +192,7 @@ export default function CadastrarDocumentoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
-  fixedTop: { paddingTop: 60, paddingBottom: 20, backgroundColor: '#FFFFFF' },
+  fixedTop: { paddingTop: (StatusBar.currentHeight ?? 20), paddingBottom: 20, backgroundColor: '#FFFFFF' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30 },
   logoTitulo: { fontSize: 22, fontWeight: '900', color: '#e95e07' },
   perfilImage: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#e95e07' },
@@ -209,8 +208,8 @@ const styles = StyleSheet.create({
   toggleTexto: { fontWeight: 'bold' },
   button: { backgroundColor: '#e95e07', height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   buttonText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', paddingHorizontal: 30 },
-  modalBox: { backgroundColor: '#FFF', borderRadius: 16, padding: 20, maxHeight: 500 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', paddingHorizontal: 16 },
+  modalBox: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, overflow: 'hidden', width: '100%' },
   modalTitulo: { fontSize: 16, fontWeight: '900', color: '#e95e07', marginBottom: 16 },
   modalVazio: { fontSize: 13, color: '#999', fontStyle: 'italic', textAlign: 'center', paddingVertical: 20 },
   modalItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
