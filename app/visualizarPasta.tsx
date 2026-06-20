@@ -6,7 +6,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { pastasEmMemoria } from './home';
-import { userStore } from './userStore';
+import { userStore } from '../lib/userStore';
 
 export default function VisualizarPastaScreen() {
   const { pastaId } = useLocalSearchParams();

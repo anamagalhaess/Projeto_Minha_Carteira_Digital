@@ -2,26 +2,42 @@ import { Feather } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert, StatusBar, StyleSheet,
+  Alert, StatusBar, StyleSheet, ActivityIndicator,
   Text, TextInput, TouchableOpacity, View
 } from 'react-native';
+import { supabase } from '../lib/supabase';
 
 export default function CriarPastaScreen() {
   const [nomePasta, setNomePasta] = useState('');
   const [descricao, setDescricao] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleCriarPasta = () => {
+  const handleCriarPasta = async () => {
     if (!nomePasta.trim()) {
       Alert.alert('Atenção', 'O nome da pasta é obrigatório.');
       return;
     }
-    router.replace({
-      pathname: '/home',
-      params: {
-        novaPastaNome: nomePasta.trim(),
-        novaPastaDesc: descricao.trim(),
-      }
-    });
+
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não encontrado.');
+
+      const { error } = await supabase.from('pastas').insert({
+        user_id: user.id,
+        nome: nomePasta.trim(),
+        descricao: descricao.trim(),
+      });
+
+      if (error) throw error;
+
+      router.replace('/home');
+
+    } catch (error: any) {
+      Alert.alert('Erro', error.message || 'Erro ao criar pasta.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -29,16 +45,13 @@ export default function CriarPastaScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle="dark-content" />
 
-      {/* Voltar */}
       <TouchableOpacity style={styles.btnVoltar} onPress={() => router.replace('/home')}>
         <Feather name="arrow-left" size={20} color="#000" />
         <Text style={styles.btnVoltarTexto}>Voltar</Text>
       </TouchableOpacity>
 
-      {/* Título */}
       <Text style={styles.tituloHeader}>Nova Pasta</Text>
 
-      {/* Formulário */}
       <View style={styles.form}>
         <Text style={styles.label}>Nome da Pasta</Text>
         <TextInput
@@ -58,8 +71,11 @@ export default function CriarPastaScreen() {
           maxLength={40}
         />
         <Text style={styles.contador}>{descricao.length}/40</Text>
-        <TouchableOpacity style={styles.button} onPress={handleCriarPasta}>
-          <Text style={styles.buttonText}>Criar Pasta</Text>
+        <TouchableOpacity style={styles.button} onPress={handleCriarPasta} disabled={loading}>
+          {loading
+            ? <ActivityIndicator color="#FFF" />
+            : <Text style={styles.buttonText}>Criar Pasta</Text>
+          }
         </TouchableOpacity>
       </View>
     </View>

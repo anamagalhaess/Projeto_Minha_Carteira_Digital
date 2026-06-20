@@ -1,33 +1,78 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, View, Text, Image, TextInput, TouchableOpacity, 
-  ScrollView, Dimensions, StatusBar, Alert 
+  ScrollView, Dimensions, StatusBar, Alert, ActivityIndicator
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { userStore } from './userStore';
+import { router, Stack, useFocusEffect } from 'expo-router';
+import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
-export let pastasEmMemoria: any[] = [];
-
 export default function HomeScreen() {
-  const params = useLocalSearchParams(); 
   const [acessoRapido, setAcessoRapido] = useState<any[]>([]);
   const [menuVisivel, setMenuVisivel] = useState(false);
-  const [minhasPastas, setMinhasPastas] = useState<any[]>(pastasEmMemoria);
+  const [minhasPastas, setMinhasPastas] = useState<any[]>([]);
+  const [primeiroNome, setPrimeiroNome] = useState('');
+  const [fotoUri, setFotoUri] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Calcula documentos próximos de vencer (dentro de 3 meses)
+  const carregarDados = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Busca perfil
+      const { data: perfil } = await supabase
+        .from('perfis')
+        .select('nome_completo, foto_url')
+        .eq('id', user.id)
+        .single();
+
+      if (perfil) {
+        setPrimeiroNome(perfil.nome_completo?.split(' ')[0] || '');
+        setFotoUri(perfil.foto_url);
+      }
+
+      // Busca pastas com documentos
+      const { data: pastas } = await supabase
+        .from('pastas')
+        .select('*, documentos(*)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (pastas) {
+        const pastasFormatadas = pastas.map((p: any) => ({
+          ...p,
+          docs: p.documentos || [],
+        }));
+        setMinhasPastas(pastasFormatadas);
+      }
+    } catch (error) {
+      console.log('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Recarrega toda vez que a tela recebe foco
+  useFocusEffect(
+    useCallback(() => {
+      carregarDados();
+    }, [])
+  );
+
   const docsProximosVencer = () => {
     const hoje = new Date();
     const limite = new Date();
     limite.setMonth(limite.getMonth() + 3);
     const resultado: { doc: any; diasRestantes: number }[] = [];
 
-    pastasEmMemoria.forEach(pasta => {
+    minhasPastas.forEach(pasta => {
       (pasta.docs || []).forEach((doc: any) => {
-        if (!doc.dataValidade || !doc.avisoAutomatico) return;
-        const [dia, mes, ano] = doc.dataValidade.split('/').map(Number);
+        if (!doc.data_validade || !doc.aviso_automatico) return;
+        const [dia, mes, ano] = doc.data_validade.split('/').map(Number);
         const vencimento = new Date(ano, mes - 1, dia);
         if (vencimento <= limite && vencimento >= hoje) {
           const diff = Math.ceil((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
@@ -46,23 +91,6 @@ export default function HomeScreen() {
     return `Falta${meses === 1 ? '' : 'm'} ${meses} ${meses === 1 ? 'mês' : 'meses'} para vencer`;
   };
 
-  useEffect(() => {
-    if (params.novaPastaNome) {
-      const jaExiste = pastasEmMemoria.find(p => p.nome === params.novaPastaNome);
-      if (!jaExiste) {
-        const novaPasta = { 
-          id: Date.now().toString(), 
-          nome: params.novaPastaNome as string, 
-          descricao: params.novaPastaDesc as string,
-          docs: []
-        };
-        pastasEmMemoria.push(novaPasta);
-        setMinhasPastas([...pastasEmMemoria]);
-      }
-      router.setParams({ novaPastaNome: '', novaPastaDesc: '' });
-    }
-  }, [params.novaPastaNome]);
-
   const confirmarExclusao = (id: string, nome: string) => {
     Alert.alert(
       'Apagar Pasta',
@@ -74,9 +102,9 @@ export default function HomeScreen() {
     );
   };
 
-  const apagarPasta = (id: string) => {
-    pastasEmMemoria = pastasEmMemoria.filter(pasta => pasta.id !== id);
-    setMinhasPastas([...pastasEmMemoria]);
+  const apagarPasta = async (id: string) => {
+    const { error } = await supabase.from('pastas').delete().eq('id', id);
+    if (!error) setMinhasPastas(prev => prev.filter(p => p.id !== id));
   };
 
   const adicionarDoc = (doc: any, pastaId: string) => {
@@ -119,12 +147,12 @@ export default function HomeScreen() {
       <View style={styles.headerContainer}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.titleText}>Olá, {userStore.primeiroNome}!</Text>
+            <Text style={styles.titleText}>Olá, {primeiroNome}!</Text>
             <Text style={styles.subText}>Sou sua carteira digital</Text>
           </View>
           <TouchableOpacity onPress={() => router.push({ pathname: '/perfil', params: { totalPastas: minhasPastas.length } })}>
             <Image
-              source={userStore.fotoUri ? { uri: userStore.fotoUri } : require('../assets/images/fotoPerfil.jpg')}
+              source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')}
               style={styles.avatar}
             />
           </TouchableOpacity>
@@ -135,68 +163,72 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Acesso Rápido */}
-        <Text style={styles.sectionTitle}>Acesso Rápido</Text>
-        <View style={styles.grid}>
-          {acessoRapido.map((doc, index) => (
-            <TouchableOpacity key={index} style={styles.card} onPress={() => router.push({ pathname: '/visualizarDocumento', params: { pastaId: doc.pastaId, docId: doc.id } })}>
-              <Text style={styles.cardNome} numberOfLines={1}>{doc.nome.toUpperCase()}</Text>
-              <View style={styles.underline} />
-            </TouchableOpacity>
-          ))}
-          {acessoRapido.length < 3 && (
-            <TouchableOpacity style={styles.addCard} onPress={() => setMenuVisivel(!menuVisivel)}>
-              <Feather name="plus-circle" size={24} color="#CCC" />
-              <Text style={styles.addCardText}>Adicionar</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {menuVisivel && <MiniMenu />}
-
-        {/* --- AVISOS DE VENCIMENTO --- */}
-        {docsProximosVencer().length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Aviso</Text>
-            {docsProximosVencer().map(({ doc, diasRestantes }) => (
-              <View key={doc.id} style={styles.avisoCard}>
-                <View style={styles.avisoIcone}>
-                  <Feather name="bell" size={22} color="#e95e07" />
-                </View>
-                <View style={styles.avisoInfo}>
-                  <Text style={styles.avisoNome}>{doc.nome}</Text>
-                  <Text style={styles.avisoTexto}>{textoAviso(diasRestantes)}</Text>
-                </View>
-              </View>
+      {loading ? (
+        <ActivityIndicator size="large" color="#e95e07" style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          
+          {/* Acesso Rápido */}
+          <Text style={styles.sectionTitle}>Acesso Rápido</Text>
+          <View style={styles.grid}>
+            {acessoRapido.map((doc, index) => (
+              <TouchableOpacity key={index} style={styles.card} onPress={() => router.push({ pathname: '/visualizarDocumento', params: { pastaId: doc.pastaId, docId: doc.id } })}>
+                <Text style={styles.cardNome} numberOfLines={1}>{doc.nome.toUpperCase()}</Text>
+                <View style={styles.underline} />
+              </TouchableOpacity>
             ))}
-          </>
-        )}
+            {acessoRapido.length < 3 && (
+              <TouchableOpacity style={styles.addCard} onPress={() => setMenuVisivel(!menuVisivel)}>
+                <Feather name="plus-circle" size={24} color="#CCC" />
+                <Text style={styles.addCardText}>Adicionar</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-        {/* Minhas Pastas */}
-        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Minhas Pastas</Text>
-        <View style={styles.grid}>
-          {minhasPastas.map((pasta) => (
-            <TouchableOpacity 
-              key={pasta.id} 
-              style={styles.pastaCard}
-              onPress={() => router.push({ pathname: '/visualizarPasta', params: { pastaId: pasta.id } })}
-              onLongPress={() => confirmarExclusao(pasta.id, pasta.nome)}
-              delayLongPress={500}
-            >
-              <Text style={styles.pastaNome} numberOfLines={1}>{pasta.nome.toUpperCase()}</Text>
-              <View style={styles.underline} />
+          {menuVisivel && <MiniMenu />}
+
+          {/* Avisos de Vencimento */}
+          {docsProximosVencer().length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Aviso</Text>
+              {docsProximosVencer().map(({ doc, diasRestantes }) => (
+                <View key={doc.id} style={styles.avisoCard}>
+                  <View style={styles.avisoIcone}>
+                    <Feather name="bell" size={22} color="#e95e07" />
+                  </View>
+                  <View style={styles.avisoInfo}>
+                    <Text style={styles.avisoNome}>{doc.nome}</Text>
+                    <Text style={styles.avisoTexto}>{textoAviso(diasRestantes)}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+
+          {/* Minhas Pastas */}
+          <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Minhas Pastas</Text>
+          <View style={styles.grid}>
+            {minhasPastas.map((pasta) => (
+              <TouchableOpacity 
+                key={pasta.id} 
+                style={styles.pastaCard}
+                onPress={() => router.push({ pathname: '/visualizarPasta', params: { pastaId: pasta.id } })}
+                onLongPress={() => confirmarExclusao(pasta.id, pasta.nome)}
+                delayLongPress={500}
+              >
+                <Text style={styles.pastaNome} numberOfLines={1}>{pasta.nome.toUpperCase()}</Text>
+                <View style={styles.underline} />
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.pastaCardAdicionar} onPress={() => router.push('/cadastroPasta')}>
+              <Feather name="plus-circle" size={24} color="#CCC" />
+              <Text style={styles.addCardText}>Nova pasta</Text>
             </TouchableOpacity>
-          ))}
-          <TouchableOpacity style={styles.pastaCardAdicionar} onPress={() => router.push('/cadastroPasta')}>
-            <Feather name="plus-circle" size={24} color="#CCC" />
-            <Text style={styles.addCardText}>Nova pasta</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
+      )}
 
-      {/* TabBar — padrão cadastrarDocumento */}
+      {/* TabBar */}
       <View style={styles.tabBar}>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/favoritos')}>
           <Feather name="star" size={20} color="#666" />
@@ -217,7 +249,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
-  headerContainer: { backgroundColor: '#FFF', paddingBottom: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingTop: (StatusBar.currentHeight ?? 20)},
+  headerContainer: { backgroundColor: '#FFF', paddingBottom: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingTop: (StatusBar.currentHeight ?? 20) },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20 },
   titleText: { fontSize: 24, fontWeight: 'bold' },
   subText: { color: '#666' },
@@ -227,31 +259,24 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 24, paddingBottom: 100 },
   sectionTitle: { fontSize: 20, fontWeight: '800', marginBottom: 15, color: '#333' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  
   card: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#e95e07', height: 90, marginBottom: 16 },
   addCard: { width: (width - 64) / 2.1, height: 90, backgroundColor: '#FFF', borderRadius: 12, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#DDD', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   cardNome: { fontWeight: 'bold', fontSize: 14, color: '#000000', textAlign: 'center' },
   addCardText: { marginTop: 8, color: '#AAA', fontSize: 13 },
-  
   pastaCard: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#e95e07', height: 90, marginBottom: 16 },
   pastaCardAdicionar: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#DDD', borderStyle: 'dashed', height: 90, marginBottom: 16 },
   pastaNome: { fontWeight: 'bold', fontSize: 14, color: '#000000', textAlign: 'center' },
   underline: { width: '60%', height: 3, backgroundColor: '#e95e07', marginTop: 8, borderRadius: 2 },
-  
   miniMenu: { backgroundColor: '#FFF', padding: 15, borderRadius: 20, marginBottom: 20, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
   menuSection: { marginBottom: 15 },
   menuTitle: { fontWeight: 'bold', color: '#e95e07', fontSize: 14, marginBottom: 8 },
   menuItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   textoVazio: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 5 },
-
-  // Avisos de vencimento
   avisoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1.5, borderColor: '#e95e07', padding: 14, marginBottom: 10 },
   avisoIcone: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#FFF5EE', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   avisoInfo: { flex: 1 },
   avisoNome: { fontSize: 14, fontWeight: '700', color: '#000', marginBottom: 2 },
   avisoTexto: { fontSize: 12, color: '#e95e07', fontWeight: '600' },
-
-  // TabBar padronizada
   tabBar: { position: 'absolute', bottom: 0, flexDirection: 'row', width: '100%', height: 80, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#DDD', justifyContent: 'space-around', alignItems: 'center' },
   tabItem: { alignItems: 'center' },
   tabText: { fontSize: 11, marginTop: 4, fontWeight: '600', color: '#666' },

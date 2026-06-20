@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Image, ScrollView, KeyboardAvoidingView, Platform, Alert
+  Image, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { userStore } from './userStore';
+import { supabase } from '../lib/supabase';
 
-const CustomInput = ({ iconName, placeholder, isPassword, value, onChangeText }: any) => {
+const CustomInput = ({ iconName, placeholder, isPassword, value, onChangeText, keyboardType }: any) => {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
@@ -23,6 +23,7 @@ const CustomInput = ({ iconName, placeholder, isPassword, value, onChangeText }:
         autoCorrect={false}
         autoComplete="off"
         textContentType="none"
+        keyboardType={keyboardType || 'default'}
         value={value}
         onChangeText={onChangeText}
       />
@@ -41,6 +42,7 @@ export default function RegisterScreen() {
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
   const [image, setImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -50,12 +52,12 @@ export default function RegisterScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [1, 1], quality: 1,
+      allowsEditing: true, aspect: [1, 1], quality: 0.5,
     });
     if (!result.canceled) setImage(result.assets[0].uri);
   };
 
-  const handleCriarConta = () => {
+  const handleCriarConta = async () => {
     if (!nome.trim() || !email.trim() || !senha.trim() || !confirmarSenha.trim()) {
       Alert.alert('Cadastro incompleto', 'Por favor, preencha todos os campos.');
       return;
@@ -64,11 +66,61 @@ export default function RegisterScreen() {
       Alert.alert('Atenção', 'As senhas não coincidem.');
       return;
     }
-    // Salva no store global para usar na home e no perfil
-    userStore.nomeCompleto = nome.trim();
-    userStore.email = email.trim();
-    userStore.fotoUri = image;
-    router.push('/home');
+    if (senha.length < 6) {
+      Alert.alert('Atenção', 'A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Cria o usuário no Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password: senha,
+      });
+
+      if (error) throw error;
+
+      const userId = data.user?.id;
+      if (!userId) throw new Error('Erro ao obter ID do usuário.');
+
+      // 2. Faz upload da foto se tiver
+      let fotoUrl = null;
+      if (image) {
+        const ext = image.split('.').pop();
+        const fileName = `${userId}/avatar.${ext}`;
+        const formData = new FormData();
+        formData.append('file', { uri: image, name: fileName, type: `image/${ext}` } as any);
+
+        const { error: uploadError } = await supabase.storage
+          .from('avatares')
+          .upload(fileName, formData, { upsert: true });
+
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('avatares').getPublicUrl(fileName);
+          fotoUrl = urlData.publicUrl;
+        }
+      }
+
+      // 3. Salva o perfil na tabela perfis
+      const { error: perfilError } = await supabase.from('perfis').insert({
+        id: userId,
+        nome_completo: nome.trim(),
+        email: email.trim(),
+        foto_url: fotoUrl,
+      });
+
+      if (perfilError) throw perfilError;
+
+      Alert.alert('Sucesso', 'Conta criada com sucesso!', [
+        { text: 'OK', onPress: () => router.replace('/home') }
+      ]);
+
+    } catch (error: any) {
+      Alert.alert('Erro', error.message || 'Erro ao criar conta.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -83,11 +135,10 @@ export default function RegisterScreen() {
           <Text style={styles.title}>Crie sua Conta</Text>
 
           <CustomInput iconName="user" placeholder="Nome Completo" value={nome} onChangeText={setNome} />
-          <CustomInput iconName="mail" placeholder="Email" value={email} onChangeText={setEmail} />
+          <CustomInput iconName="mail" placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
           <CustomInput iconName="lock" placeholder="Senha" isPassword value={senha} onChangeText={setSenha} />
           <CustomInput iconName="lock" placeholder="Confirme sua senha" isPassword value={confirmarSenha} onChangeText={setConfirmarSenha} />
 
-          {/* Foto de perfil */}
           <TouchableOpacity style={styles.inputContainer} onPress={pickImage} activeOpacity={0.7}>
             <Feather name="image" size={20} color="#666" style={styles.leftIcon} />
             <View style={styles.textWrapper}>
@@ -98,8 +149,11 @@ export default function RegisterScreen() {
             {image && <Image source={{ uri: image }} style={styles.previewImage} />}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.submitButton} onPress={handleCriarConta}>
-            <Text style={styles.submitButtonText}>Criar Conta</Text>
+          <TouchableOpacity style={styles.submitButton} onPress={handleCriarConta} disabled={loading}>
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.submitButtonText}>Criar Conta</Text>
+            }
           </TouchableOpacity>
 
         </ScrollView>
@@ -131,7 +185,7 @@ const styles = StyleSheet.create({
   previewImage: { width: 30, height: 30, borderRadius: 15, marginLeft: 10 },
   submitButton: { backgroundColor: '#EF6C00', borderRadius: 8, height: 50, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   submitButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  footer:{width: '100%', alignItems: 'center', paddingBottom:8},
+  footer: { width: '100%', alignItems: 'center', paddingBottom: 10 },
   linhaSeparadora: { width: '100%', height: 1.5, backgroundColor: '#000', marginBottom: 15 },
   footerText: { fontSize: 15, color: '#333' },
   loginLink: { color: '#283593', fontWeight: 'semibold' },

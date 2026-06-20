@@ -6,7 +6,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import { pastasEmMemoria } from './home';
-import { userStore } from './userStore';
+import { userStore } from '../lib/userStore';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 const formatarData = (date: Date) => {

@@ -6,7 +6,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { userStore } from './userStore';
+import { userStore } from '../lib/userStore';
 
 const CampoEditavel = ({ label, value, onChange, isPassword = false, keyboardType = 'default', onSave }: any) => {
   const [editando, setEditando] = useState(false);
