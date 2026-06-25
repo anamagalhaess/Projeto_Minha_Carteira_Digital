@@ -6,10 +6,11 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 export default function VisualizarDocumentoScreen() {
   const { docId } = useLocalSearchParams();
-
   const [doc, setDoc] = useState<any>(null);
   const [pastas, setPastas] = useState<any[]>([]);
   const [fotoUri, setFotoUri] = useState<string | null>(null);
@@ -17,55 +18,34 @@ export default function VisualizarDocumentoScreen() {
   const [favorito, setFavorito] = useState(false);
   const [dropdownVisivel, setDropdownVisivel] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [salvando, setSalvando] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      const carregar = async () => {
-        setLoading(true);
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
+  useFocusEffect(useCallback(() => {
+    const carregar = async () => {
+      setLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-          // Busca documento
-          const { data: docData } = await supabase
-            .from('documentos')
-            .select('*, pastas(nome)')
-            .eq('id', docId)
-            .single();
+        const { data: docData } = await supabase
+          .from('documentos').select('*, pastas(nome)').eq('id', docId).single();
+        if (docData) { setDoc(docData); setFavorito(docData.favorito || false); }
 
-          if (docData) {
-            setDoc(docData);
-            setFavorito(docData.favorito || false);
-          }
+        const { data: pastasData } = await supabase
+          .from('pastas').select('*').eq('user_id', user.id).order('created_at', { ascending: true });
+        if (pastasData) setPastas(pastasData);
 
-          // Busca todas as pastas do usuário
-          const { data: pastasData } = await supabase
-            .from('pastas')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: true });
+        const { data: perfil } = await supabase
+          .from('perfis').select('foto_url').eq('id', user.id).single();
+        if (perfil) setFotoUri(perfil.foto_url);
 
-          if (pastasData) setPastas(pastasData);
-
-          // Busca foto do perfil
-          const { data: perfil } = await supabase
-            .from('perfis')
-            .select('foto_url')
-            .eq('id', user.id)
-            .single();
-
-          if (perfil) setFotoUri(perfil.foto_url);
-
-        } catch (error) {
-          console.log('Erro ao carregar documento:', error);
-        } finally {
-          setLoading(false);
-        }
-      };
-      carregar();
-    }, [docId])
-  );
+      } catch (error) {
+        console.log('Erro ao carregar documento:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    carregar();
+  }, [docId]));
 
   const toggleFavorito = async () => {
     const novoValor = !favorito;
@@ -74,57 +54,65 @@ export default function VisualizarDocumentoScreen() {
   };
 
   const handleMoverPasta = async (novaPasta: any) => {
-    if (novaPasta.id === doc?.pasta_id) {
-      setDropdownVisivel(false);
-      return;
-    }
-    setSalvando(true);
-    const { error } = await supabase
-      .from('documentos')
-      .update({ pasta_id: novaPasta.id })
-      .eq('id', docId);
-
+    if (novaPasta.id === doc?.pasta_id) { setDropdownVisivel(false); return; }
+    const { error } = await supabase.from('documentos').update({ pasta_id: novaPasta.id }).eq('id', docId);
     if (!error) {
       setDoc({ ...doc, pasta_id: novaPasta.id, pastas: { nome: novaPasta.nome } });
       Alert.alert('Sucesso', `Documento movido para "${novaPasta.nome}"!`);
     }
     setDropdownVisivel(false);
-    setSalvando(false);
   };
 
   const handleExcluir = () => {
-    Alert.alert(
-      'Excluir Documento',
-      `Tem certeza que deseja excluir "${doc?.nome}"?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.from('documentos').delete().eq('id', docId);
-            router.back();
-          }
-        }
-      ]
-    );
+    Alert.alert('Excluir Documento', `Tem certeza que deseja excluir "${doc?.nome}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Excluir', style: 'destructive', onPress: async () => {
+        await supabase.from('documentos').delete().eq('id', docId);
+        router.back();
+      }}
+    ]);
   };
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#e95e07" />
-      </View>
-    );
-  }
+  const handleBaixarPDF = async () => {
+    if (!doc.frente_url && !doc.verso_url) {
+      Alert.alert('Atenção', 'Este documento não possui imagens para gerar o PDF.');
+      return;
+    }
+    try {
+      const html = `
+        <html><body style="font-family:Arial;padding:24px;">
+          <h2 style="color:#e95e07;">${doc.nome}</h2>
+          ${doc.descricao ? `<p>${doc.descricao}</p>` : ''}
+          ${doc.data_validade ? `<p><strong>Validade:</strong> ${doc.data_validade}</p>` : ''}
+          <hr/>
+          <h3>Frente</h3>
+          ${doc.frente_url ? `<img src="${doc.frente_url}" style="width:100%;"/>` : '<p>Sem imagem</p>'}
+          <h3>Verso</h3>
+          ${doc.verso_url ? `<img src="${doc.verso_url}" style="width:100%;"/>` : '<p>Sem imagem</p>'}
+        </body></html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `Salvar ${doc.nome}`,
+        UTI: 'com.adobe.pdf',
+      });
+    } catch {
+      Alert.alert('Erro', 'Não foi possível gerar o PDF.');
+    }
+  };
 
-  if (!doc) {
-    return (
-      <View style={styles.container}>
-        <Text style={{ padding: 40, color: '#999' }}>Documento não encontrado.</Text>
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <ActivityIndicator size="large" color="#e95e07" />
+    </View>
+  );
+
+  if (!doc) return (
+    <View style={styles.container}>
+      <Text style={{ padding: 40, color: '#999' }}>Documento não encontrado.</Text>
+    </View>
+  );
 
   const imagemAtual = ladoVisivel === 'frente' ? doc.frente_url : doc.verso_url;
 
@@ -133,15 +121,11 @@ export default function VisualizarDocumentoScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
       <View style={styles.fixedTop}>
         <View style={styles.header}>
           <Text style={styles.logoTitulo} numberOfLines={1}>{doc.nome}</Text>
           <TouchableOpacity onPress={() => router.push('/perfil')}>
-            <Image
-              source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')}
-              style={styles.perfilImage}
-            />
+            <Image source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')} style={styles.perfilImage} />
           </TouchableOpacity>
         </View>
       </View>
@@ -153,41 +137,31 @@ export default function VisualizarDocumentoScreen() {
           <Text style={styles.btnVoltarTexto}>Voltar</Text>
         </TouchableOpacity>
 
-        {/* Carrossel frente/verso */}
         <View style={styles.carrosselContainer}>
           <TouchableOpacity style={styles.seta} onPress={() => setLadoVisivel('frente')} disabled={ladoVisivel === 'frente'}>
             <Feather name="chevron-left" size={28} color={ladoVisivel === 'frente' ? '#DDD' : '#333'} />
           </TouchableOpacity>
-
           <View style={styles.imagemCard}>
-            {imagemAtual ? (
-              <Image source={{ uri: imagemAtual }} style={styles.imagemReal} />
-            ) : (
-              <>
-                <Feather name="image" size={48} color="#CCC" />
-                <Text style={styles.imagemLabel}>{ladoVisivel === 'frente' ? 'Frente' : 'Verso'}</Text>
-              </>
-            )}
+            {imagemAtual
+              ? <Image source={{ uri: imagemAtual }} style={styles.imagemReal} />
+              : <><Feather name="image" size={48} color="#CCC" /><Text style={styles.imagemLabel}>{ladoVisivel === 'frente' ? 'Frente' : 'Verso'}</Text></>
+            }
           </View>
-
           <TouchableOpacity style={styles.seta} onPress={() => setLadoVisivel('verso')} disabled={ladoVisivel === 'verso'}>
             <Feather name="chevron-right" size={28} color={ladoVisivel === 'verso' ? '#DDD' : '#333'} />
           </TouchableOpacity>
         </View>
 
-        {/* Indicador */}
         <View style={styles.indicadorRow}>
           <View style={[styles.indicador, ladoVisivel === 'frente' && styles.indicadorAtivo]} />
           <View style={[styles.indicador, ladoVisivel === 'verso' && styles.indicadorAtivo]} />
         </View>
 
-        {/* Botão Baixar PDF */}
-        <TouchableOpacity style={styles.btnBaixar}>
+        <TouchableOpacity style={styles.btnBaixar} onPress={handleBaixarPDF}>
           <Feather name="download" size={18} color="#FFF" style={{ marginRight: 8 }} />
           <Text style={styles.btnBaixarTexto}>Baixar PDF</Text>
         </TouchableOpacity>
 
-        {/* Data de validade */}
         <Text style={styles.label}>Data de validade</Text>
         <View style={styles.inputRow}>
           <Text style={[styles.inputTexto, !doc.data_validade && { color: '#999' }]}>
@@ -196,59 +170,49 @@ export default function VisualizarDocumentoScreen() {
           <Feather name="calendar" size={18} color="#666" />
         </View>
 
-        {/* Favoritar */}
         <Text style={styles.label}>Favoritar</Text>
         <TouchableOpacity style={styles.inputRow} onPress={toggleFavorito}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
             <Feather name="star" size={16} color={favorito ? '#e95e07' : '#999'} style={{ marginRight: 8 }} />
-            <Text style={[styles.inputTexto, { color: favorito ? '#e95e07' : '#333' }]}>
-              {favorito ? 'Sim' : 'Não'}
-            </Text>
+            <Text style={[styles.inputTexto, { color: favorito ? '#e95e07' : '#333' }]}>{favorito ? 'Sim' : 'Não'}</Text>
           </View>
           <Feather name="chevron-right" size={18} color="#666" />
         </TouchableOpacity>
 
-        {/* Alterar pasta */}
         <Text style={styles.label}>Alterar pasta</Text>
         <TouchableOpacity style={styles.inputRow} onPress={() => setDropdownVisivel(true)}>
           <Text style={styles.inputTexto}>{doc.pastas?.nome || 'Selecionar pasta'}</Text>
           <Feather name="chevron-right" size={18} color="#666" />
         </TouchableOpacity>
 
-        {/* Modal troca de pasta */}
         <Modal visible={dropdownVisivel} transparent animationType="fade">
           <TouchableOpacity style={styles.modalOverlay} onPress={() => setDropdownVisivel(false)}>
             <View style={styles.modalBox}>
               <Text style={styles.modalTitulo}>Mover para pasta</Text>
-              {pastas.length === 0 ? (
-                <Text style={styles.modalVazio}>Nenhuma pasta disponível.</Text>
-              ) : (
-                <FlatList
-                  data={pastas}
-                  keyExtractor={item => item.id}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity style={styles.modalItem} onPress={() => handleMoverPasta(item)}>
-                      <Feather name="folder" size={18} color="#e95e07" style={{ marginRight: 10 }} />
-                      <Text style={styles.modalItemTexto}>{item.nome}</Text>
-                      {doc.pasta_id === item.id && (
-                        <Feather name="check" size={18} color="#e95e07" style={{ marginLeft: 'auto' }} />
-                      )}
-                    </TouchableOpacity>
-                  )}
-                />
-              )}
+              {pastas.length === 0
+                ? <Text style={styles.modalVazio}>Nenhuma pasta disponível.</Text>
+                : <FlatList
+                    data={pastas}
+                    keyExtractor={item => item.id}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity style={styles.modalItem} onPress={() => handleMoverPasta(item)}>
+                        <Feather name="folder" size={18} color="#e95e07" style={{ marginRight: 10 }} />
+                        <Text style={styles.modalItemTexto}>{item.nome}</Text>
+                        {doc.pasta_id === item.id && <Feather name="check" size={18} color="#e95e07" style={{ marginLeft: 'auto' }} />}
+                      </TouchableOpacity>
+                    )}
+                  />
+              }
             </View>
           </TouchableOpacity>
         </Modal>
 
-        {/* Excluir */}
         <TouchableOpacity style={styles.btnExcluir} onPress={handleExcluir}>
           <Text style={styles.btnExcluirTexto}>Excluir Documento</Text>
         </TouchableOpacity>
 
       </ScrollView>
 
-      {/* TabBar */}
       <View style={styles.tabBar}>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/favoritos')}>
           <Feather name="star" size={20} color="#666" /><Text style={styles.tabText}>Favoritos</Text>
