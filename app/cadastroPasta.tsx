@@ -83,7 +83,7 @@ export default function CriarPastaScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 30 },
+  container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 30, marginTop: 30 },
   btnVoltar: { flexDirection: 'row', alignItems: 'center', marginTop: (StatusBar.currentHeight ?? 20), marginBottom: 8 },
   btnVoltarTexto: { fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
   tituloHeader: { fontSize: 20, fontWeight: '900', color: '#e95e07', marginBottom: 15, marginTop: 10 },

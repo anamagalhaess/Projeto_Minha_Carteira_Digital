@@ -311,7 +311,7 @@ export default function CadastrarDocumentoScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   fixedTop: { paddingTop: (StatusBar.currentHeight ?? 20), paddingBottom: 20, backgroundColor: '#FFFFFF' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30, marginTop: 30 },
   logoTitulo: { fontSize: 22, fontWeight: '900', color: '#e95e07' },
   perfilImage: { width: 50, height: 50, borderRadius: 20, borderWidth: 2, borderColor: '#e95e07' },
   scrollContent: { paddingHorizontal: 30, paddingBottom: 100 },

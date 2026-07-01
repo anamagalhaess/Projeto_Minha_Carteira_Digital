@@ -118,7 +118,7 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'space-between' },
   scrollContent: { flexGrow: 1, paddingBottom: 20 },
-  header: { width: screenWidth, height: 250, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+  header: { width: screenWidth, height: 250, alignItems: 'center', justifyContent: 'center', marginTop: 30, },
   logoImage: { width: '100%', height: '100%' },
   form: { paddingHorizontal: 30, marginTop: -10 },
   title: { fontSize: 28, fontWeight: '900', color: '#e95e07', marginBottom: 25, textAlign: 'center' },

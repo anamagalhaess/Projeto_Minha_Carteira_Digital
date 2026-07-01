@@ -278,10 +278,10 @@ export default function PerfilScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
-  headerContainer: { paddingTop: (StatusBar.currentHeight ?? 20), paddingHorizontal: 30, paddingBottom: 16 },
+  headerContainer: { paddingTop: (StatusBar.currentHeight ?? 20), paddingHorizontal: 30, paddingBottom: 16, marginTop: 30 },
   btnVoltar: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   btnVoltarTexto: { fontSize: 16, fontWeight: 'bold', marginLeft: 6 },
-  tituloHeader: { fontSize: 26, fontWeight: '900', color: '#000' },
+  tituloHeader: { fontSize: 26, fontWeight: '900', color: '#e95e07'},
   scrollContent: { paddingHorizontal: 30, paddingBottom: 110 },
   avatarWrapper: { alignItems: 'center', marginVertical: 24 },
   avatarContainer: { position: 'relative', marginBottom: 12 },

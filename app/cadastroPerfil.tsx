@@ -171,7 +171,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'space-between' },
+  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'space-between', marginTop: 30 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20 },
   header: { alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   logo: { width: 250, height: 150 },

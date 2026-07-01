@@ -318,7 +318,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
-  headerContainer: { backgroundColor: '#FFF', paddingBottom: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingTop: (StatusBar.currentHeight ?? 20) },
+  headerContainer: { backgroundColor: '#FFF', paddingBottom: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingTop: (StatusBar.currentHeight ?? 20), marginTop: 30},
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20 },
   titleText: { fontSize: 24, fontWeight: 'bold' },
   subText: { color: '#666' },
