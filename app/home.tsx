@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   StyleSheet, View, Text, Image, TextInput, TouchableOpacity, 
   ScrollView, Dimensions, StatusBar, Alert, ActivityIndicator
@@ -6,8 +6,10 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router, Stack, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
+const ACESSO_RAPIDO_KEY = 'acesso_rapido';
 
 export default function HomeScreen() {
   const [acessoRapido, setAcessoRapido] = useState<any[]>([]);
@@ -16,6 +18,7 @@ export default function HomeScreen() {
   const [primeiroNome, setPrimeiroNome] = useState('');
   const [fotoUri, setFotoUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState('');
 
   const carregarDados = async () => {
     setLoading(true);
@@ -23,32 +26,23 @@ export default function HomeScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Busca perfil
       const { data: perfil } = await supabase
-        .from('perfis')
-        .select('nome_completo, foto_url')
-        .eq('id', user.id)
-        .single();
-
+        .from('perfis').select('nome_completo, foto_url').eq('id', user.id).single();
       if (perfil) {
         setPrimeiroNome(perfil.nome_completo?.split(' ')[0] || '');
         setFotoUri(perfil.foto_url);
       }
 
-      // Busca pastas com documentos
       const { data: pastas } = await supabase
-        .from('pastas')
-        .select('*, documentos(*)')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
-
+        .from('pastas').select('*, documentos(*)').eq('user_id', user.id).order('created_at', { ascending: true });
       if (pastas) {
-        const pastasFormatadas = pastas.map((p: any) => ({
-          ...p,
-          docs: p.documentos || [],
-        }));
-        setMinhasPastas(pastasFormatadas);
+        setMinhasPastas(pastas.map((p: any) => ({ ...p, docs: p.documentos || [] })));
       }
+
+      // Carrega acesso rápido do AsyncStorage
+      const salvo = await AsyncStorage.getItem(ACESSO_RAPIDO_KEY);
+      if (salvo) setAcessoRapido(JSON.parse(salvo));
+
     } catch (error) {
       console.log('Erro ao carregar dados:', error);
     } finally {
@@ -56,19 +50,57 @@ export default function HomeScreen() {
     }
   };
 
-  // Recarrega toda vez que a tela recebe foco
-  useFocusEffect(
-    useCallback(() => {
-      carregarDados();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { carregarDados(); }, []));
+
+  const salvarAcessoRapido = async (lista: any[]) => {
+    setAcessoRapido(lista);
+    await AsyncStorage.setItem(ACESSO_RAPIDO_KEY, JSON.stringify(lista));
+  };
+
+  const adicionarDoc = (doc: any, pastaId: string) => {
+    const jaAdicionado = acessoRapido.find(item => item.id === doc.id);
+    if (!jaAdicionado && acessoRapido.length < 3) {
+      const novaLista = [...acessoRapido, { ...doc, pastaId }];
+      salvarAcessoRapido(novaLista);
+      setMenuVisivel(false);
+    }
+  };
+
+  const removerDoAcessoRapido = (id: string) => {
+    Alert.alert(
+      'Acesso Rápido',
+      'Deseja remover este documento do Acesso Rápido?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Remover', style: 'destructive', onPress: () => {
+          const novaLista = acessoRapido.filter(item => item.id !== id);
+          salvarAcessoRapido(novaLista);
+        }}
+      ]
+    );
+  };
+
+  const resultadosBusca = () => {
+    if (!busca.trim()) return null;
+    const termo = busca.toLowerCase();
+    const pastas: any[] = [];
+    const docs: any[] = [];
+    minhasPastas.forEach(pasta => {
+      if (pasta.nome.toLowerCase().includes(termo)) pastas.push(pasta);
+      (pasta.docs || []).forEach((doc: any) => {
+        if (doc.nome.toLowerCase().includes(termo)) docs.push({ ...doc, pastaNome: pasta.nome });
+      });
+    });
+    return { pastas, docs };
+  };
+
+  const resultados = resultadosBusca();
 
   const docsProximosVencer = () => {
     const hoje = new Date();
     const limite = new Date();
     limite.setMonth(limite.getMonth() + 3);
     const resultado: { doc: any; diasRestantes: number }[] = [];
-
     minhasPastas.forEach(pasta => {
       (pasta.docs || []).forEach((doc: any) => {
         if (!doc.data_validade || !doc.aviso_automatico) return;
@@ -80,7 +112,6 @@ export default function HomeScreen() {
         }
       });
     });
-
     return resultado.sort((a, b) => a.diasRestantes - b.diasRestantes);
   };
 
@@ -92,27 +123,15 @@ export default function HomeScreen() {
   };
 
   const confirmarExclusao = (id: string, nome: string) => {
-    Alert.alert(
-      'Apagar Pasta',
-      `Tem certeza que deseja apagar a pasta "${nome}" e todos os documentos nela?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Apagar', style: 'destructive', onPress: () => apagarPasta(id) }
-      ]
-    );
+    Alert.alert('Apagar Pasta', `Tem certeza que deseja apagar a pasta "${nome}" e todos os documentos nela?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Apagar', style: 'destructive', onPress: () => apagarPasta(id) }
+    ]);
   };
 
   const apagarPasta = async (id: string) => {
     const { error } = await supabase.from('pastas').delete().eq('id', id);
     if (!error) setMinhasPastas(prev => prev.filter(p => p.id !== id));
-  };
-
-  const adicionarDoc = (doc: any, pastaId: string) => {
-    const jaAdicionado = acessoRapido.find(item => item.id === doc.id);
-    if (!jaAdicionado && acessoRapido.length < 3) {
-      setAcessoRapido([...acessoRapido, { ...doc, pastaId }]);
-      setMenuVisivel(false);
-    }
   };
 
   const MiniMenu = () => (
@@ -143,36 +162,94 @@ export default function HomeScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
       <View style={styles.headerContainer}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.titleText}>Olá, {primeiroNome}!</Text>
             <Text style={styles.subText}>Sou sua carteira digital</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push({ pathname: '/perfil', params: { totalPastas: minhasPastas.length } })}>
-            <Image
-              source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')}
-              style={styles.avatar}
-            />
+          <TouchableOpacity onPress={() => router.push('/perfil')}>
+            <Image source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')} style={styles.perfilImage} />
           </TouchableOpacity>
         </View>
         <View style={styles.searchBar}>
           <Feather name="search" size={18} color="#999" />
-          <TextInput style={styles.searchInput} placeholder="Buscar documentos..." placeholderTextColor="#999" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar documentos e pastas..."
+            placeholderTextColor="#999"
+            value={busca}
+            onChangeText={setBusca}
+          />
+          {busca.length > 0 && (
+            <TouchableOpacity onPress={() => setBusca('')}>
+              <Feather name="x" size={16} color="#999" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#e95e07" style={{ marginTop: 40 }} />
+      ) : resultados ? (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.sectionTitle}>Resultados para "{busca}"</Text>
+          {resultados.pastas.length === 0 && resultados.docs.length === 0 && (
+            <View style={{ alignItems: 'center', marginTop: 40 }}>
+              <Feather name="search" size={48} color="#DDD" />
+              <Text style={{ color: '#AAA', marginTop: 12, fontSize: 14 }}>Nenhum resultado encontrado.</Text>
+            </View>
+          )}
+          {resultados.pastas.length > 0 && (
+            <>
+              <Text style={styles.subSectionTitle}>Pastas</Text>
+              {resultados.pastas.map((pasta: any) => (
+                <TouchableOpacity key={pasta.id} style={styles.resultadoCard}
+                  onPress={() => router.push({ pathname: '/visualizarPasta', params: { pastaId: pasta.id } })}>
+                  <View style={styles.resultadoIcone}><Feather name="folder" size={22} color="#e95e07" /></View>
+                  <View style={styles.resultadoInfo}>
+                    <Text style={styles.resultadoNome}>{pasta.nome}</Text>
+                    {pasta.descricao ? <Text style={styles.resultadoSub}>{pasta.descricao}</Text> : null}
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#CCC" />
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+          {resultados.docs.length > 0 && (
+            <>
+              <Text style={[styles.subSectionTitle, { marginTop: 16 }]}>Documentos</Text>
+              {resultados.docs.map((doc: any) => (
+                <TouchableOpacity key={doc.id} style={styles.resultadoCard}
+                  onPress={() => router.push({ pathname: '/visualizarDocumento', params: { docId: doc.id } })}>
+                  <View style={styles.resultadoIcone}>
+                    {doc.frente_url
+                      ? <Image source={{ uri: doc.frente_url }} style={styles.resultadoThumb} />
+                      : <Feather name="file-text" size={22} color="#e95e07" />}
+                  </View>
+                  <View style={styles.resultadoInfo}>
+                    <Text style={styles.resultadoNome}>{doc.nome}</Text>
+                    <Text style={styles.resultadoSub}>{doc.pastaNome}</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#CCC" />
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+        </ScrollView>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          
-          {/* Acesso Rápido */}
+
           <Text style={styles.sectionTitle}>Acesso Rápido</Text>
           <View style={styles.grid}>
             {acessoRapido.map((doc, index) => (
-              <TouchableOpacity key={index} style={styles.card} onPress={() => router.push({ pathname: '/visualizarDocumento', params: { pastaId: doc.pastaId, docId: doc.id } })}>
+              <TouchableOpacity
+                key={index}
+                style={styles.card}
+                onPress={() => router.push({ pathname: '/visualizarDocumento', params: { docId: doc.id } })}
+                onLongPress={() => removerDoAcessoRapido(doc.id)}
+                delayLongPress={500}
+              >
                 <Text style={styles.cardNome} numberOfLines={1}>{doc.nome.toUpperCase()}</Text>
                 <View style={styles.underline} />
               </TouchableOpacity>
@@ -187,15 +264,12 @@ export default function HomeScreen() {
 
           {menuVisivel && <MiniMenu />}
 
-          {/* Avisos de Vencimento */}
           {docsProximosVencer().length > 0 && (
             <>
               <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Aviso</Text>
               {docsProximosVencer().map(({ doc, diasRestantes }) => (
                 <View key={doc.id} style={styles.avisoCard}>
-                  <View style={styles.avisoIcone}>
-                    <Feather name="bell" size={22} color="#e95e07" />
-                  </View>
+                  <View style={styles.avisoIcone}><Feather name="bell" size={22} color="#e95e07" /></View>
                   <View style={styles.avisoInfo}>
                     <Text style={styles.avisoNome}>{doc.nome}</Text>
                     <Text style={styles.avisoTexto}>{textoAviso(diasRestantes)}</Text>
@@ -205,12 +279,11 @@ export default function HomeScreen() {
             </>
           )}
 
-          {/* Minhas Pastas */}
           <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Minhas Pastas</Text>
           <View style={styles.grid}>
             {minhasPastas.map((pasta) => (
-              <TouchableOpacity 
-                key={pasta.id} 
+              <TouchableOpacity
+                key={pasta.id}
                 style={styles.pastaCard}
                 onPress={() => router.push({ pathname: '/visualizarPasta', params: { pastaId: pasta.id } })}
                 onLongPress={() => confirmarExclusao(pasta.id, pasta.nome)}
@@ -228,19 +301,15 @@ export default function HomeScreen() {
         </ScrollView>
       )}
 
-      {/* TabBar */}
       <View style={styles.tabBar}>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/favoritos')}>
-          <Feather name="star" size={20} color="#666" />
-          <Text style={styles.tabText}>Favoritos</Text>
+          <Feather name="star" size={20} color="#666" /><Text style={styles.tabText}>Favoritos</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/home')}>
-          <Feather name="home" size={20} color="#e95e07" />
-          <Text style={[styles.tabText, { color: '#e95e07' }]}>Início</Text>
+          <Feather name="home" size={20} color="#e95e07" /><Text style={[styles.tabText, { color: '#e95e07' }]}>Início</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/cadastroDocumento')}>
-          <Feather name="plus-circle" size={20} color="#666" />
-          <Text style={styles.tabText}>Documento</Text>
+          <Feather name="plus-circle" size={20} color="#666" /><Text style={styles.tabText}>Documento</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -253,11 +322,12 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20 },
   titleText: { fontSize: 24, fontWeight: 'bold' },
   subText: { color: '#666' },
-  avatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#e95e07' },
+  perfilImage: { width: 50, height: 50, borderRadius: 20, borderWidth: 2, borderColor: '#e95e07' },
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F3F5', marginHorizontal: 24, borderRadius: 15, padding: 15 },
   searchInput: { flex: 1, marginLeft: 10, outlineStyle: 'none' as any },
   scrollContent: { padding: 24, paddingBottom: 100 },
   sectionTitle: { fontSize: 20, fontWeight: '800', marginBottom: 15, color: '#333' },
+  subSectionTitle: { fontSize: 14, fontWeight: '700', color: '#999', marginBottom: 10, textTransform: 'uppercase' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   card: { width: (width - 64) / 2.1, backgroundColor: '#FFFFFF', padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#e95e07', height: 90, marginBottom: 16 },
   addCard: { width: (width - 64) / 2.1, height: 90, backgroundColor: '#FFF', borderRadius: 12, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#DDD', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
@@ -277,6 +347,12 @@ const styles = StyleSheet.create({
   avisoInfo: { flex: 1 },
   avisoNome: { fontSize: 14, fontWeight: '700', color: '#000', marginBottom: 2 },
   avisoTexto: { fontSize: 12, color: '#e95e07', fontWeight: '600' },
+  resultadoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1.5, borderColor: '#F0F0F0', padding: 14, marginBottom: 10 },
+  resultadoIcone: { width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFF5EE', justifyContent: 'center', alignItems: 'center', marginRight: 14, overflow: 'hidden' },
+  resultadoThumb: { width: 44, height: 44, borderRadius: 10 },
+  resultadoInfo: { flex: 1 },
+  resultadoNome: { fontSize: 15, fontWeight: '700', color: '#000', marginBottom: 2 },
+  resultadoSub: { fontSize: 12, color: '#999' },
   tabBar: { position: 'absolute', bottom: 0, flexDirection: 'row', width: '100%', height: 80, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#DDD', justifyContent: 'space-around', alignItems: 'center' },
   tabItem: { alignItems: 'center' },
   tabText: { fontSize: 11, marginTop: 4, fontWeight: '600', color: '#666' },

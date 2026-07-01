@@ -1,142 +1,71 @@
 import React, { useState, useCallback } from 'react';
 import {
   StyleSheet, View, Text, Image, TextInput, TouchableOpacity,
-  ScrollView, StatusBar, Alert, KeyboardAvoidingView, Platform, ActivityIndicator
+  ScrollView, StatusBar, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router, Stack, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 
-const CampoEditavel = ({ label, value, onChange, isPassword = false, keyboardType = 'default', onSave }: any) => {
-  const [editando, setEditando] = useState(false);
-  const [mostrarSenha, setMostrarSenha] = useState(false);
-
-  const salvar = () => {
-    setEditando(false);
-    if (onSave) onSave(value);
-  };
-
-  return (
-    <>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={[styles.input, !editando && styles.inputReadOnly]}
-          value={editando ? value : (isPassword ? 'Alterar Senha' : value)}
-          onChangeText={onChange}
-          editable={editando}
-          secureTextEntry={isPassword && !mostrarSenha}
-          keyboardType={keyboardType}
-          autoCapitalize="none"
-          placeholderTextColor="#999"
-        />
-        {editando ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {isPassword && (
-              <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)} style={{ marginRight: 12 }}>
-                <Feather name={mostrarSenha ? 'eye' : 'eye-off'} size={18} color="#666" />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={salvar}>
-              <Feather name="check" size={18} color="#e95e07" />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity onPress={() => setEditando(true)}>
-            <Feather name="edit-2" size={18} color="#666" />
-          </TouchableOpacity>
-        )}
-      </View>
-    </>
-  );
-};
-
 export default function PerfilScreen() {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
   const [fotoUri, setFotoUri] = useState<string | null>(null);
   const [totalPastas, setTotalPastas] = useState(0);
   const [totalDocs, setTotalDocs] = useState(0);
   const [totalFavoritos, setTotalFavoritos] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [editandoNome, setEditandoNome] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      const carregar = async () => {
-        setLoading(true);
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
+  // Modal de senha
+  const [modalSenha, setModalSenha] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState('');
+  const [novaSenha, setNovaSenha] = useState('');
+  const [mostrarSenhaAtual, setMostrarSenhaAtual] = useState(false);
+  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
 
-          // Busca perfil
-          const { data: perfil } = await supabase
-            .from('perfis')
-            .select('nome_completo, email, foto_url')
-            .eq('id', user.id)
-            .single();
+  useFocusEffect(useCallback(() => {
+    const carregar = async () => {
+      setLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-          if (perfil) {
-            setNome(perfil.nome_completo || '');
-            setEmail(perfil.email || '');
-            setFotoUri(perfil.foto_url);
-          }
+        const { data: perfil } = await supabase
+          .from('perfis').select('nome_completo, email, foto_url').eq('id', user.id).single();
+        if (perfil) { setNome(perfil.nome_completo || ''); setEmail(perfil.email || ''); setFotoUri(perfil.foto_url); }
 
-          // Estatísticas
-          const { count: numPastas } = await supabase
-            .from('pastas')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id);
+        const { count: numPastas } = await supabase.from('pastas').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+        const { count: numDocs } = await supabase.from('documentos').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+        const { count: numFav } = await supabase.from('documentos').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('favorito', true);
 
-          const { count: numDocs } = await supabase
-            .from('documentos')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id);
-
-          const { count: numFavoritos } = await supabase
-            .from('documentos')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('favorito', true);
-
-          setTotalPastas(numPastas || 0);
-          setTotalDocs(numDocs || 0);
-          setTotalFavoritos(numFavoritos || 0);
-
-        } catch (error) {
-          console.log('Erro ao carregar perfil:', error);
-        } finally {
-          setLoading(false);
-        }
-      };
-      carregar();
-    }, [])
-  );
+        setTotalPastas(numPastas || 0);
+        setTotalDocs(numDocs || 0);
+        setTotalFavoritos(numFav || 0);
+      } catch (error) {
+        console.log('Erro ao carregar perfil:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    carregar();
+  }, []));
 
   const escolherFoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria para alterar sua foto.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [1, 1], quality: 0.7,
-    });
+    if (status !== 'granted') { Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
     if (!result.canceled) {
       const uri = result.assets[0].uri;
       setFotoUri(uri);
-
-      // Upload no Supabase Storage
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const ext = uri.split('.').pop();
       const path = `${user.id}/avatar.${ext}`;
       const formData = new FormData();
       formData.append('file', { uri, name: path, type: `image/${ext}` } as any);
-
       const { error } = await supabase.storage.from('avatares').upload(path, formData, { upsert: true });
       if (!error) {
         const { data } = supabase.storage.from('avatares').getPublicUrl(path);
@@ -145,48 +74,60 @@ export default function PerfilScreen() {
     }
   };
 
-  const salvarNome = async (novoNome: string) => {
+  const salvarNome = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { error } = await supabase.from('perfis').update({ nome_completo: novoNome }).eq('id', user.id);
+    const { error } = await supabase.from('perfis').update({ nome_completo: nome }).eq('id', user.id);
+    setEditandoNome(false);
     if (!error) Alert.alert('Salvo', 'Nome atualizado com sucesso!');
   };
 
-  const salvarEmail = async (novoEmail: string) => {
-    const { error } = await supabase.auth.updateUser({ email: novoEmail });
-    if (!error) {
-      await supabase.from('perfis').update({ email: novoEmail }).eq('id', (await supabase.auth.getUser()).data.user?.id);
-      Alert.alert('Salvo', 'E-mail atualizado com sucesso!');
-    }
-  };
+  const alterarSenha = async () => {
+    if (!senhaAtual || !novaSenha) { Alert.alert('Atenção', 'Preencha todos os campos.'); return; }
+    if (novaSenha.length < 6) { Alert.alert('Atenção', 'A nova senha deve ter pelo menos 6 caracteres.'); return; }
 
-  const salvarSenha = async (novaSenha: string) => {
-    if (novaSenha.length < 6) {
-      Alert.alert('Atenção', 'A senha deve ter pelo menos 6 caracteres.');
-      return;
+    setSalvandoSenha(true);
+    try {
+      // Verifica a senha atual tentando fazer login
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error: erroLogin } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: senhaAtual,
+      });
+
+      if (erroLogin) {
+        Alert.alert('Erro', 'Senha atual incorreta.');
+        setSalvandoSenha(false);
+        return;
+      }
+
+      // Senha correta, atualiza para a nova
+      const { error } = await supabase.auth.updateUser({ password: novaSenha });
+      if (!error) {
+        Alert.alert('Sucesso', 'Senha atualizada com sucesso!');
+        setSenhaAtual('');
+        setNovaSenha('');
+        setModalSenha(false);
+      } else {
+        Alert.alert('Erro', 'Não foi possível atualizar a senha.');
+      }
+    } finally {
+      setSalvandoSenha(false);
     }
-    const { error } = await supabase.auth.updateUser({ password: novaSenha });
-    if (!error) Alert.alert('Salvo', 'Senha atualizada com sucesso!');
-    else Alert.alert('Erro', 'Não foi possível atualizar a senha.');
   };
 
   const handleSair = () => {
     Alert.alert('Sair da Conta', 'Tem certeza que deseja sair?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Sair', style: 'destructive', onPress: async () => {
-        await supabase.auth.signOut();
-        router.replace('/login');
-      }},
+      { text: 'Sair', style: 'destructive', onPress: async () => { await supabase.auth.signOut(); router.replace('/login'); } }
     ]);
   };
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#e95e07" />
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <ActivityIndicator size="large" color="#e95e07" />
+    </View>
+  );
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -207,10 +148,7 @@ export default function PerfilScreen() {
           {/* Avatar */}
           <View style={styles.avatarWrapper}>
             <View style={styles.avatarContainer}>
-              <Image
-                source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')}
-                style={styles.avatar}
-              />
+              <Image source={fotoUri ? { uri: fotoUri } : require('../assets/images/fotoPerfil.jpg')} style={styles.avatar} />
               <TouchableOpacity style={styles.btnCamera} onPress={escolherFoto}>
                 <Feather name="camera" size={14} color="#FFF" />
               </TouchableOpacity>
@@ -218,7 +156,7 @@ export default function PerfilScreen() {
             <Text style={styles.nomeExibido}>{nome}</Text>
           </View>
 
-          {/* Estatísticas reais do banco */}
+          {/* Estatísticas */}
           <View style={styles.statsRow}>
             {([[totalPastas.toString(), 'Pastas'], [totalDocs.toString(), 'Documentos'], [totalFavoritos.toString(), 'Favoritos']] as string[][]).map(([num, label], i, arr) => (
               <React.Fragment key={label}>
@@ -231,15 +169,96 @@ export default function PerfilScreen() {
             ))}
           </View>
 
-          <CampoEditavel label="Nome Completo" value={nome} onChange={setNome} onSave={salvarNome} />
-          <CampoEditavel label="Senha" value={senha} onChange={setSenha} isPassword onSave={salvarSenha} />
-          <CampoEditavel label="E-mail" value={email} onChange={setEmail} keyboardType="email-address" onSave={salvarEmail} />
+          {/* Nome editável */}
+          <Text style={styles.label}>Nome Completo</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, !editandoNome && styles.inputReadOnly]}
+              value={nome}
+              onChangeText={setNome}
+              editable={editandoNome}
+              autoCapitalize="words"
+              placeholderTextColor="#999"
+            />
+            {editandoNome ? (
+              <TouchableOpacity onPress={salvarNome}>
+                <Feather name="check" size={18} color="#e95e07" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={() => setEditandoNome(true)}>
+                <Feather name="edit-2" size={18} color="#666" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Senha — abre modal */}
+          <Text style={styles.label}>Senha</Text>
+          <TouchableOpacity style={styles.inputRow} onPress={() => setModalSenha(true)}>
+            <Text style={[styles.input, styles.inputReadOnly]}>Alterar Senha</Text>
+            <Feather name="edit-2" size={18} color="#666" />
+          </TouchableOpacity>
+
+          {/* Email — somente leitura */}
+          <Text style={styles.label}>E-mail</Text>
+          <View style={[styles.inputRow, { backgroundColor: '#F9F9F9' }]}>
+            <Text style={[styles.input, { color: '#999' }]}>{email}</Text>
+            <Feather name="lock" size={16} color="#CCC" />
+          </View>
 
           <TouchableOpacity style={styles.btnSair} onPress={handleSair}>
             <Text style={styles.btnSairTexto}>Sair da Conta</Text>
           </TouchableOpacity>
 
         </ScrollView>
+
+        {/* Modal de alteração de senha */}
+        <Modal visible={modalSenha} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitulo}>Alterar Senha</Text>
+
+              <Text style={styles.modalLabel}>Senha atual</Text>
+              <View style={styles.modalInputRow}>
+                <TextInput
+                  style={styles.modalInput}
+                  value={senhaAtual}
+                  onChangeText={setSenhaAtual}
+                  secureTextEntry={!mostrarSenhaAtual}
+                  placeholder="Digite sua senha atual"
+                  placeholderTextColor="#999"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity onPress={() => setMostrarSenhaAtual(!mostrarSenhaAtual)}>
+                  <Feather name={mostrarSenhaAtual ? 'eye' : 'eye-off'} size={18} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalLabel}>Nova senha</Text>
+              <View style={styles.modalInputRow}>
+                <TextInput
+                  style={styles.modalInput}
+                  value={novaSenha}
+                  onChangeText={setNovaSenha}
+                  secureTextEntry={!mostrarNovaSenha}
+                  placeholder="Digite a nova senha (mín. 6 caracteres)"
+                  placeholderTextColor="#999"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity onPress={() => setMostrarNovaSenha(!mostrarNovaSenha)}>
+                  <Feather name={mostrarNovaSenha ? 'eye' : 'eye-off'} size={18} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity style={styles.btnConfirmar} onPress={alterarSenha} disabled={salvandoSenha}>
+                {salvandoSenha ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnConfirmarTexto}>Confirmar</Text>}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.btnCancelar} onPress={() => { setModalSenha(false); setSenhaAtual(''); setNovaSenha(''); }}>
+                <Text style={styles.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         <View style={styles.tabBar}>
           <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/favoritos')}>
@@ -280,6 +299,17 @@ const styles = StyleSheet.create({
   inputReadOnly: { color: '#555' },
   btnSair: { backgroundColor: '#e95e07', height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   btnSairTexto: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  // Modal senha
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalBox: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 30, paddingBottom: 40 },
+  modalTitulo: { fontSize: 20, fontWeight: '900', color: '#000', marginBottom: 24, textAlign: 'center' },
+  modalLabel: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 8 },
+  modalInputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: '#000', borderRadius: 8, paddingHorizontal: 15, height: 50, marginBottom: 20 },
+  modalInput: { flex: 1, fontSize: 14, color: '#000' },
+  btnConfirmar: { backgroundColor: '#e95e07', height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  btnConfirmarTexto: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  btnCancelar: { height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#DDD' },
+  btnCancelarTexto: { color: '#666', fontSize: 16, fontWeight: '600' },
   tabBar: { position: 'absolute', bottom: 0, flexDirection: 'row', width: '100%', height: 80, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#DDD', justifyContent: 'space-around', alignItems: 'center' },
   tabItem: { alignItems: 'center' },
   tabText: { fontSize: 11, marginTop: 4, fontWeight: '600', color: '#666' },

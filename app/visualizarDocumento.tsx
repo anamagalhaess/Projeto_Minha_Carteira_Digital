@@ -1,13 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import {
   StyleSheet, View, Text, Image, TouchableOpacity,
-  ScrollView, StatusBar, Alert, Modal, FlatList, ActivityIndicator
+  ScrollView, StatusBar, Alert, Modal, FlatList, ActivityIndicator,
+  Dimensions
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+
+const { width, height } = Dimensions.get('window');
 
 export default function VisualizarDocumentoScreen() {
   const { docId } = useLocalSearchParams();
@@ -18,6 +21,7 @@ export default function VisualizarDocumentoScreen() {
   const [favorito, setFavorito] = useState(false);
   const [dropdownVisivel, setDropdownVisivel] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [imagemFullscreen, setImagemFullscreen] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     const carregar = async () => {
@@ -92,11 +96,7 @@ export default function VisualizarDocumentoScreen() {
         </body></html>
       `;
       const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: `Salvar ${doc.nome}`,
-        UTI: 'com.adobe.pdf',
-      });
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Salvar ${doc.nome}`, UTI: 'com.adobe.pdf' });
     } catch {
       Alert.alert('Erro', 'Não foi possível gerar o PDF.');
     }
@@ -121,6 +121,22 @@ export default function VisualizarDocumentoScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle="dark-content" />
 
+      {/* Modal fullscreen da imagem */}
+      <Modal visible={!!imagemFullscreen} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.fullscreenContainer}>
+          <TouchableOpacity style={styles.fullscreenVoltar} onPress={() => setImagemFullscreen(null)}>
+            <Feather name="arrow-left" size={24} color="#FFF" />
+          </TouchableOpacity>
+          {imagemFullscreen && (
+            <Image
+              source={{ uri: imagemFullscreen }}
+              style={styles.fullscreenImagem}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
+
       <View style={styles.fixedTop}>
         <View style={styles.header}>
           <Text style={styles.logoTitulo} numberOfLines={1}>{doc.nome}</Text>
@@ -137,16 +153,29 @@ export default function VisualizarDocumentoScreen() {
           <Text style={styles.btnVoltarTexto}>Voltar</Text>
         </TouchableOpacity>
 
+        {/* Carrossel */}
         <View style={styles.carrosselContainer}>
           <TouchableOpacity style={styles.seta} onPress={() => setLadoVisivel('frente')} disabled={ladoVisivel === 'frente'}>
             <Feather name="chevron-left" size={28} color={ladoVisivel === 'frente' ? '#DDD' : '#333'} />
           </TouchableOpacity>
-          <View style={styles.imagemCard}>
+
+          {/* Clica na imagem para ver em fullscreen */}
+          <TouchableOpacity
+            style={styles.imagemCard}
+            onPress={() => imagemAtual && setImagemFullscreen(imagemAtual)}
+            activeOpacity={imagemAtual ? 0.8 : 1}
+          >
             {imagemAtual
-              ? <Image source={{ uri: imagemAtual }} style={styles.imagemReal} />
+              ? <>
+                  <Image source={{ uri: imagemAtual }} style={styles.imagemReal} />
+                  <View style={styles.expandirIcone}>
+                    <Feather name="maximize-2" size={14} color="#FFF" />
+                  </View>
+                </>
               : <><Feather name="image" size={48} color="#CCC" /><Text style={styles.imagemLabel}>{ladoVisivel === 'frente' ? 'Frente' : 'Verso'}</Text></>
             }
-          </View>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.seta} onPress={() => setLadoVisivel('verso')} disabled={ladoVisivel === 'verso'}>
             <Feather name="chevron-right" size={28} color={ladoVisivel === 'verso' ? '#DDD' : '#333'} />
           </TouchableOpacity>
@@ -156,6 +185,10 @@ export default function VisualizarDocumentoScreen() {
           <View style={[styles.indicador, ladoVisivel === 'frente' && styles.indicadorAtivo]} />
           <View style={[styles.indicador, ladoVisivel === 'verso' && styles.indicadorAtivo]} />
         </View>
+
+        {imagemAtual && (
+          <Text style={styles.dicaExpandir}>Toque na imagem para ver em tela cheia</Text>
+        )}
 
         <TouchableOpacity style={styles.btnBaixar} onPress={handleBaixarPDF}>
           <Feather name="download" size={18} color="#FFF" style={{ marginRight: 8 }} />
@@ -233,7 +266,7 @@ const styles = StyleSheet.create({
   fixedTop: { paddingTop: (StatusBar.currentHeight ?? 20), paddingBottom: 20, backgroundColor: '#FFFFFF' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30 },
   logoTitulo: { fontSize: 22, fontWeight: '900', color: '#e95e07', flex: 1, marginRight: 10 },
-  perfilImage: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#e95e07' },
+  perfilImage: { width: 50, height: 50, borderRadius: 20, borderWidth: 2, borderColor: '#e95e07' },
   scrollContent: { paddingHorizontal: 30, paddingBottom: 100 },
   btnVoltar: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   btnVoltarTexto: { fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
@@ -241,8 +274,10 @@ const styles = StyleSheet.create({
   seta: { padding: 8 },
   imagemCard: { flex: 1, height: 200, borderWidth: 1.5, borderColor: '#DDD', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', overflow: 'hidden' },
   imagemReal: { width: '100%', height: '100%', resizeMode: 'cover' },
+  expandirIcone: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 6, padding: 4 },
   imagemLabel: { marginTop: 8, color: '#AAA', fontSize: 13 },
-  indicadorRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 24, gap: 6 },
+  dicaExpandir: { textAlign: 'center', fontSize: 11, color: '#AAA', marginBottom: 16, marginTop: -4 },
+  indicadorRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 12, gap: 6 },
   indicador: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#DDD' },
   indicadorAtivo: { backgroundColor: '#e95e07', width: 20 },
   btnBaixar: { backgroundColor: '#e95e07', height: 50, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 28 },
@@ -258,6 +293,10 @@ const styles = StyleSheet.create({
   modalItemTexto: { fontSize: 15, fontWeight: '600', color: '#333' },
   btnExcluir: { backgroundColor: '#e95e07', height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
   btnExcluirTexto: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  // Fullscreen
+  fullscreenContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  fullscreenVoltar: { position: 'absolute', top: 50, left: 20, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, padding: 10 },
+  fullscreenImagem: { width, height },
   tabBar: { position: 'absolute', bottom: 0, flexDirection: 'row', width: '100%', height: 80, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#DDD', justifyContent: 'space-around', alignItems: 'center' },
   tabItem: { alignItems: 'center' },
   tabText: { fontSize: 11, marginTop: 4, fontWeight: '600', color: '#666' },
